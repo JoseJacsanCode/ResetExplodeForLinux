@@ -1,0 +1,70 @@
+# ResetExplodeForLinux 🐧💥
+
+Versão para **Linux** forkeada do projeto do canal **Reset**.
+
+> Este repositório adapta o projeto original para rodar em sistemas Linux, mantendo a ideia e a proposta do canal.
+
+---
+
+## 📌 Sobre o projeto
+
+O **ResetExplodeForLinux** é uma adaptação para Linux do projeto criado no canal Reset. O objetivo é permitir que quem usa distribuições Linux consiga executar o mesmo projeto sem depender do sistema original.
+
+<!-- TODO: descreva em 1 ou 2 frases o que o projeto faz na prática (ex.: "Executa X ao rodar Y"). -->
+
+## 📁 Estrutura do repositório
+
+```
+ResetExplodeForLinux/
+├── Assets/   # Recursos usados pelo projeto (imagens, sons, etc.)
+└── linux/    # Arquivos e scripts da versão para Linux
+```
+
+<!-- TODO: ajuste a descrição de cada pasta conforme o conteúdo real. -->
+
+## ✅ Requisitos
+
+- Uma distribuição Linux (Ubuntu, Debian, Fedora, Arch, etc.)
+- Git
+- <!-- TODO: liste dependências (Python, Java, Node.js, bibliotecas, etc.) -->
+
+## 🚀 Instalação
+
+Clone o repositório:
+
+```bash
+git clone https://github.com/JoseJacsanCode/ResetExplodeForLinux.git
+cd ResetExplodeForLinux
+```
+
+## ▶️ Como usar
+
+Entre na pasta da versão Linux:
+
+```bash
+cd linux
+```
+
+<!-- TODO: informe o comando para executar. Exemplos:
+chmod +x nome-do-arquivo.sh
+./nome-do-arquivo.sh
+-->
+
+## 🙏 Créditos
+
+- Projeto original: canal **Reset** — todos os direitos da ideia e do conteúdo original pertencem aos seus criadores.
+- Adaptação para Linux: [JoseJacsanCode](https://github.com/JoseJacsanCode)
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas!
+
+1. Faça um fork do projeto
+2. Crie uma branch: `git checkout -b minha-melhoria`
+3. Faça commit das alterações: `git commit -m "Descrição da melhoria"`
+4. Envie para o seu fork: `git push origin minha-melhoria`
+5. Abra um Pull Request
+
+## 📄 Licença
+
+<!-- TODO: defina a licença (ex.: MIT) e adicione o arquivo LICENSE ao repositório. -->
