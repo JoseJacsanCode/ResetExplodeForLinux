@@ -64,5 +64,4 @@ Contribuições são bem-vindas!
 5. Abra um Pull Request
 
 ## 📄 Licença
-
-<!-- TODO: defina a licença (ex.: MIT) e adicione o arquivo LICENSE ao repositório. -->
+[GNU General Public License v3.0] (https://github.com/JoseJacsanCode/ResetExplodeForLinux/blob/main/LICENSE)
