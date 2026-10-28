@@ -1,0 +1,10 @@
+[package]
+name = "reset-explode-linux"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Prévia Linux do Reset Explode"
+
+[profile.release]
+strip = true
+lto = true

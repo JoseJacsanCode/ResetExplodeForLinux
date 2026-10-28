@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Reset Explode Linux (prévia)
+Comment=Informações e sensores do sistema
+Exec=reset-explode-linux
+Icon=reset-explode-linux
+Categories=System;Monitor;
+Terminal=false
