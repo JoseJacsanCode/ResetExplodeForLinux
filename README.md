@@ -58,10 +58,8 @@ Baixe o projeto, pode utilizar o [Visual Studio Code]() para programar ou utiliz
 Contribuições são bem-vindas!
 
 1. Faça um fork do projeto
-2. Crie uma branch: `git checkout -b minha-melhoria`
-3. Faça commit das alterações: `git commit -m "Descrição da melhoria"`
-4. Envie para o seu fork: `git push origin minha-melhoria`
-5. Abra um Pull Request
+2. Faça commit das alterações: `git commit -m "Descrição da melhoria"`
+3. Abra um Pull Request
 
 ## 📄 Licença
 [GNU General Public License v3.0](https://github.com/JoseJacsanCode/ResetExplodeForLinux/blob/main/LICENSE)
