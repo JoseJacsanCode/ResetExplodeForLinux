@@ -1,8 +1,8 @@
-# ResetExplodeForLinux 🐧💥
+# Reset Explode For Linux 🐧💥
 
 Versão para **Linux** forkeada do projeto do canal **Reset**.
 
-> Este repositório adapta o projeto original para rodar em sistemas Linux, mantendo a ideia e a proposta do canal.
+> Este repositório adapta o projeto original para rodar em sistemas Linux, mantendo a ideia e a proposta do canal. Assim como o original, esse também foi feito inteiramente com IA, eventuais erros serão encontrados. O objetivo deste projeto é criar uma versão para Linux do Reset Explode, contribuições ou forks para melhorar o projeto são bem-vindos
 
 ---
 
@@ -26,7 +26,8 @@ ResetExplodeForLinux/
 
 - Uma distribuição Linux (Ubuntu, Debian, Fedora, Arch, etc.)
 - Git
-- <!-- TODO: liste dependências (Python, Java, Node.js, bibliotecas, etc.) -->
+- Rust
+- Chatgpt Codex
 
 ## 🚀 Instalação
 
