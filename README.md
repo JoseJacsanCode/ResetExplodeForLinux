@@ -64,4 +64,4 @@ Contribuições são bem-vindas!
 5. Abra um Pull Request
 
 ## 📄 Licença
-[GNU General Public License v3.0] (https://github.com/JoseJacsanCode/ResetExplodeForLinux/blob/main/LICENSE)
+[GNU General Public License v3.0](https://github.com/JoseJacsanCode/ResetExplodeForLinux/blob/main/LICENSE)
