@@ -1,6 +1,6 @@
 use reset_explode_linux::benchmark::{self, Results};
 use reset_explode_linux::render_bench::{self, RenderPreview, RenderResult};
-use reset_explode_linux::{page_text, report_html, snapshot};
+use reset_explode_linux::{page_text, report_html, snapshot, ReportTheme};
 use std::ffi::{c_char, c_int, c_uint, c_void, CString};
 use std::os::unix::ffi::OsStrExt;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -14,6 +14,10 @@ use std::time::Duration;
 extern "C" {
     fn gtk_init();
     fn gtk_window_present(window: *mut c_void);
+    fn gtk_widget_realize(widget: *mut c_void);
+    fn gtk_native_get_surface(native: *mut c_void) -> *mut c_void;
+    fn gdk_wayland_toplevel_get_type() -> usize;
+    fn gdk_wayland_toplevel_set_application_id(surface: *mut c_void, id: *const c_char);
     fn gtk_window_minimize(window: *mut c_void);
     fn gtk_window_maximize(window: *mut c_void);
     fn gtk_window_unmaximize(window: *mut c_void);
@@ -21,6 +25,7 @@ extern "C" {
     fn gtk_window_destroy(window: *mut c_void);
     fn gtk_window_set_transient_for(window: *mut c_void, parent: *mut c_void);
     fn gtk_picture_new() -> *mut c_void;
+    fn gdk_texture_new_from_bytes(bytes: *mut c_void, error: *mut *mut c_void) -> *mut c_void;
     fn gtk_picture_set_paintable(picture: *mut c_void, paintable: *mut c_void);
     fn gtk_picture_set_content_fit(picture: *mut c_void, fit: c_int);
     fn gdk_memory_texture_new(
@@ -31,6 +36,7 @@ extern "C" {
         stride: usize,
     ) -> *mut c_void;
     fn gtk_window_set_title(window: *mut c_void, title: *const c_char);
+    fn gtk_window_set_default_icon_name(name: *const c_char);
     fn gtk_window_set_default_size(window: *mut c_void, width: c_int, height: c_int);
     fn gtk_scrolled_window_set_child(scroll: *mut c_void, child: *mut c_void);
     fn gtk_scrolled_window_new() -> *mut c_void;
@@ -39,6 +45,8 @@ extern "C" {
     fn gtk_box_remove(b: *mut c_void, child: *mut c_void);
     fn gtk_widget_get_first_child(widget: *mut c_void) -> *mut c_void;
     fn gtk_label_new(text: *const c_char) -> *mut c_void;
+    fn gtk_size_group_new(mode: c_int) -> *mut c_void;
+    fn gtk_size_group_add_widget(group: *mut c_void, widget: *mut c_void);
     fn gtk_label_set_xalign(label: *mut c_void, xalign: f32);
     fn gtk_label_set_text(label: *mut c_void, text: *const c_char);
     fn gtk_label_set_wrap(label: *mut c_void, wrap: c_int);
@@ -100,6 +108,7 @@ extern "C" {
         flags: c_uint,
     ) -> u64;
     fn g_object_unref(object: *mut c_void);
+    fn g_type_check_instance_is_a(instance: *mut c_void, g_type: usize) -> c_int;
 }
 #[link(name = "gio-2.0")]
 extern "C" {
@@ -118,6 +127,7 @@ extern "C" {
     ) -> c_uint;
     fn g_source_remove(tag: c_uint) -> c_int;
     fn g_free(memory: *mut c_void);
+    fn g_set_prgname(name: *const c_char);
     fn g_bytes_new(data: *const c_void, size: usize) -> *mut c_void;
     fn g_bytes_unref(bytes: *mut c_void);
 }
@@ -127,7 +137,7 @@ const DARK_CSS: &str = r#"
 window { background: #011627; color: #d6deeb; }
 headerbar { background: #011627; box-shadow: none; border-bottom: 1px solid #1d3b53; }
 .reset-sidebar { background: #01111d; border: 1px solid #1d3b53; border-radius: 20px; padding: 18px 12px; }
-.reset-brand { color: #d6deeb; font-size: 15px; font-weight: 800; padding: 4px 8px 14px; }
+.reset-brand { color: #d6deeb; font-size: 15px; font-weight: 800; padding: 4px 4px; }
 .reset-group { color: #a6accd; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 16px 12px 6px; }
 button.reset-nav { background: transparent; border: 0; box-shadow: none; color: #c5d2e3; border-radius: 10px; padding: 10px 12px; font-weight: 500; }
 button.reset-nav:hover { background: #1d3b53; color: #fff; }
@@ -148,7 +158,7 @@ const LIGHT_CSS: &str = r#"
 window { background: #f6f6f6; color: #403f53; }
 headerbar { background: #f6f6f6; box-shadow: none; border-bottom: 1px solid #d8dfe3; }
 .reset-sidebar { background: #fff; border: 1px solid #d8dfe3; border-radius: 20px; padding: 18px 12px; }
-.reset-brand { color: #403f53; font-size: 15px; font-weight: 800; padding: 4px 8px 14px; }
+.reset-brand { color: #403f53; font-size: 15px; font-weight: 800; padding: 4px 4px; }
 .reset-group { color: #626b7d; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 16px 12px 6px; }
 button.reset-nav { background: transparent; border: 0; box-shadow: none; color: #495365; border-radius: 10px; padding: 10px 12px; font-weight: 500; }
 button.reset-nav:hover { background: #e8edf3; color: #263247; }
@@ -230,6 +240,8 @@ struct UiState {
     page: &'static str,
     buttons: Vec<(*mut c_void, &'static str)>,
     benchmark: Option<String>,
+    closing: bool,
+    main_loop: *mut c_void,
     running: Option<Receiver<Result<BenchResult, String>>>,
     cancel: Option<Arc<AtomicBool>>,
     progress: Option<Arc<AtomicUsize>>,
@@ -260,6 +272,7 @@ fn title(page: &str) -> &'static str {
         "BIBLIOTECA STEAM" => "Biblioteca Steam",
         "PORTAS SERIAIS" => "Portas seriais",
         "BENCHMARK" => "RESET BENCH",
+        "SOBRE" => "Sobre",
         _ => "RESET EXPLODE",
     }
 }
@@ -275,7 +288,7 @@ unsafe fn render(state: &mut UiState) {
     if state.page == "BENCHMARK" {
         gtk_box_append(
             state.content,
-            label("Benchmarks de CPU e memória para Linux", "reset-subtitle"),
+            label("Benchmarks de CPU para Linux", "reset-subtitle"),
         );
         let render_card = gtk_box_new(1, 12);
         class(render_card, "reset-card");
@@ -334,9 +347,9 @@ unsafe fn render(state: &mut UiState) {
         class(card, "reset-card");
         gtk_box_append(
             card,
-            label("TESTES RÁPIDOS LOCAIS · CPU E MEMÓRIA", "reset-card-title"),
+            label("TESTES RÁPIDOS LOCAIS · CPU", "reset-card-title"),
         );
-        gtk_box_append(card, label("O teste usa os processadores disponíveis e grava 32 MiB na memória. Os resultados dependem da carga, temperatura e limites de energia.", "reset-value"));
+        gtk_box_append(card, label("O teste usa os processadores disponíveis. Os resultados dependem da carga, temperatura e limites de energia.", "reset-value"));
         let button = gtk_button_new();
         class(button, "reset-run");
         gtk_button_set_child(
@@ -367,7 +380,7 @@ unsafe fn render(state: &mut UiState) {
         let message = if state.progress.is_some() {
             "Renderização em andamento…"
         } else if state.running.is_some() {
-            "Executando CPU single-core, CPU multi-core e gravação de memória…"
+            "Executando CPU single-core e CPU multi-core…"
         } else {
             state
                 .benchmark
@@ -376,17 +389,26 @@ unsafe fn render(state: &mut UiState) {
         };
         gtk_box_append(result, label(message, "reset-value"));
         gtk_box_append(state.content, result);
-        gtk_box_append(state.content, label("A nota da renderização usa a fórmula do original, mas a equivalência entre Windows e Linux ainda não foi validada. Os testes rápidos são independentes; a medição de memória pode incluir cache.", "reset-footer"));
+        gtk_box_append(state.content, label("A nota da renderização usa a fórmula do original, mas a equivalência entre Windows e Linux ainda não foi validada. Os testes rápidos são independentes.", "reset-footer"));
         return;
     }
     gtk_box_append(
         state.content,
         label(
-            "Monitoramento do sistema · atualização a cada 3 segundos",
+            if state.page == "SOBRE" {
+                "Informações do projeto"
+            } else {
+                "Monitoramento do sistema · atualização a cada 3 segundos"
+            },
             "reset-subtitle",
         ),
     );
-    let text = page_text(&snapshot(), state.page);
+    let text = if state.page == "SOBRE" {
+        "SOBRE O PROJETO\nCriador: Jose Jacsan\nLicença: GNU General Public License v3 (GPLv3)"
+            .to_owned()
+    } else {
+        page_text(&snapshot(), state.page)
+    };
     for section in text.split("\n\n") {
         let mut lines = section.lines();
         let Some(heading) = lines.next() else {
@@ -398,12 +420,15 @@ unsafe fn render(state: &mut UiState) {
         let card = gtk_box_new(1, 0);
         class(card, "reset-card");
         gtk_box_append(card, label(heading, "reset-card-title"));
+        // Keep all keys in this card the same width, even when a label is long.
+        let key_widths = gtk_size_group_new(1); // GTK_SIZE_GROUP_HORIZONTAL
         for line in lines {
             let row = gtk_box_new(0, 16);
             class(row, "reset-row");
             if let Some((key, value)) = line.split_once(": ") {
                 let k = label(key, "reset-key");
                 gtk_widget_set_size_request(k, 185, -1);
+                gtk_size_group_add_widget(key_widths, k);
                 gtk_box_append(row, k);
                 let v = label(value, "reset-value");
                 gtk_widget_set_hexpand(v, 1);
@@ -413,16 +438,17 @@ unsafe fn render(state: &mut UiState) {
             }
             gtk_box_append(card, row);
         }
+        g_object_unref(key_widths);
         gtk_box_append(state.content, card);
     }
     gtk_box_append(
         state.content,
-        label("RESET EXPLODE · PRÉVIA LINUX", "reset-footer"),
+        label("RESET EXPLODE · LINUX", "reset-footer"),
     );
 }
 fn describe_result(result: Result<BenchResult, String>) -> String {
     match result {
-        Ok(BenchResult::Local(r)) => format!("CPU single-core     {:.1} milhões de iterações/s\nCPU multi-core      {:.1} milhões de iterações/s  ·  {} threads\nGravação em memória    {:.2} GiB/s  ·  {} MiB", r.single_mops, r.multi_mops, r.threads, r.memory_gib_s, r.memory_mib),
+        Ok(BenchResult::Local(r)) => format!("CPU single-core     {:.1} milhões de iterações/s\nCPU multi-core      {:.1} milhões de iterações/s  ·  {} threads\n", r.single_mops, r.multi_mops, r.threads),
         Ok(BenchResult::Render(r)) => format!("Renderização de CPU: {:.1} pontos · {} threads\nAmostras: {} · Tempo: {:.1} s\nNota preliminar: equivalência com o original ainda não validada.", r.score, r.threads, r.samples, r.seconds),
         Err(e) => format!("Não foi possível concluir o teste: {e}"),
     }
@@ -437,7 +463,7 @@ extern "C" fn start_benchmark(_: *mut c_void, data: *mut c_void) {
         match std::thread::Builder::new()
             .name("reset-benchmark".into())
             .spawn(move || {
-                let _ = tx.send(benchmark::run(Duration::from_secs(2), 32).map(BenchResult::Local));
+                let _ = tx.send(benchmark::run(Duration::from_secs(2)).map(BenchResult::Local));
             }) {
             Ok(_) => {
                 state.running = Some(rx);
@@ -692,6 +718,10 @@ extern "C" fn refresh(data: *mut c_void) -> c_int {
             state.cancel = None;
             state.progress = None;
             state.benchmark = Some(result);
+            if state.closing {
+                g_main_loop_quit(state.main_loop);
+                return 1;
+            }
         }
         render(state);
     }
@@ -744,12 +774,20 @@ extern "C" fn toggle_theme(_: *mut c_void, data: *mut c_void) {
         }
     }
 }
-fn html_now(benchmark: Option<&str>) -> String {
+fn html_now(benchmark: Option<&str>, theme: Theme) -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    report_html(&snapshot(), benchmark, seconds)
+    report_html(
+        &snapshot(),
+        benchmark,
+        seconds,
+        match theme {
+            Theme::Light => ReportTheme::Light,
+            Theme::Dark => ReportTheme::Dark,
+        },
+    )
 }
 unsafe fn export_message(state: &UiState, message: &str) {
     gtk_label_set_text(state.export_status, cstring(message).as_ptr());
@@ -773,12 +811,22 @@ extern "C" fn export_response(dialog: *mut c_void, response: c_int, data: *mut c
                 } else {
                     let path_bytes = std::ffi::CStr::from_ptr(raw_path).to_bytes();
                     let path = std::path::Path::new(std::ffi::OsStr::from_bytes(path_bytes));
-                    let result = if state.running.is_some() {
-                        Some("Benchmark em andamento; resultado ainda não disponível.")
+                    let mut sections = Vec::new();
+                    if let Some(text) = &state.benchmark {
+                        sections.push(format!("BENCHMARK\n{text}"));
+                    }
+                    if state.running.is_some() {
+                        sections.push(
+                            "Um teste está em andamento; o resultado ainda não está disponível."
+                                .into(),
+                        );
+                    }
+                    let session = if sections.is_empty() {
+                        None
                     } else {
-                        state.benchmark.as_deref()
+                        Some(sections.join("\n\n"))
                     };
-                    match std::fs::write(path, html_now(result)) {
+                    match std::fs::write(path, html_now(session.as_deref(), state.theme)) {
                         Ok(()) => {
                             export_message(state, &format!("Relatório salvo em {}", path.display()))
                         }
@@ -819,7 +867,17 @@ extern "C" fn export_clicked(_: *mut c_void, data: *mut c_void) {
     }
 }
 extern "C" fn close(_: *mut c_void, data: *mut c_void) -> c_int {
-    unsafe { g_main_loop_quit(data) };
+    unsafe {
+        let state = &mut *(data as *mut UiState);
+        if state.running.is_some() {
+            if let Some(cancel) = &state.cancel {
+                cancel.store(true, Ordering::Relaxed);
+                state.closing = true;
+                return 1;
+            }
+        }
+        g_main_loop_quit(state.main_loop);
+    }
     0
 }
 unsafe fn add_nav(
@@ -883,7 +941,7 @@ fn main() {
             eprintln!("Uso: reset-explode-linux --export-html ARQUIVO.html");
             std::process::exit(2)
         };
-        if let Err(e) = std::fs::write(path, html_now(None)) {
+        if let Err(e) = std::fs::write(path, html_now(None, load_theme())) {
             eprintln!("Falha ao salvar o relatório: {e}");
             std::process::exit(1);
         }
@@ -894,8 +952,10 @@ fn main() {
         std::process::exit(1);
     }
     unsafe {
+        g_set_prgname(cstring("reset-explode-linux").as_ptr());
         gtk_init();
         adw_init();
+        gtk_window_set_default_icon_name(cstring("reset-explode-linux").as_ptr());
         let provider = gtk_css_provider_new();
         gtk_style_context_add_provider_for_display(gdk_display_get_default(), provider, 600);
         let main_loop = g_main_loop_new(std::ptr::null_mut(), 0);
@@ -936,7 +996,21 @@ fn main() {
         gtk_box_append(sidebar_shell, sidebar_scroll);
         let sidebar = gtk_box_new(1, 2);
         gtk_scrolled_window_set_child(sidebar_scroll, sidebar);
-        gtk_box_append(sidebar, label("RESET  EXPLODE", "reset-brand"));
+        let brand = gtk_box_new(0, 8);
+        let logo_data = include_bytes!("../reset-explode-sidebar.png");
+        let logo_bytes = g_bytes_new(logo_data.as_ptr().cast(), logo_data.len());
+        let logo_texture = gdk_texture_new_from_bytes(logo_bytes, std::ptr::null_mut());
+        g_bytes_unref(logo_bytes);
+        if !logo_texture.is_null() {
+            let logo = gtk_picture_new();
+            gtk_picture_set_paintable(logo, logo_texture);
+            g_object_unref(logo_texture);
+            gtk_picture_set_content_fit(logo, 1);
+            gtk_widget_set_size_request(logo, 48, 48);
+            gtk_box_append(brand, logo);
+        }
+        gtk_box_append(brand, label("RESET  EXPLODE", "reset-brand"));
+        gtk_box_append(sidebar, brand);
         let scroll = gtk_scrolled_window_new();
         gtk_widget_set_vexpand(scroll, 1);
         gtk_widget_set_hexpand(scroll, 1);
@@ -954,6 +1028,8 @@ fn main() {
             page: "Visão geral",
             buttons: Vec::new(),
             benchmark: None,
+            closing: false,
+            main_loop,
             running: None,
             cancel: None,
             progress: None,
@@ -1003,17 +1079,35 @@ fn main() {
         add_nav(sidebar, state, "◈   Benchmark", "BENCHMARK");
         gtk_box_append(sidebar, label("RESET MAKER", "reset-group"));
         add_nav(sidebar, state, "⌘   Portas seriais", "PORTAS SERIAIS");
+        add_nav(sidebar, state, "ⓘ   Sobre", "SOBRE");
         render(&mut *state);
         g_signal_connect_data(
             window,
             cstring("close-request").as_ptr(),
             close as *const c_void,
-            main_loop,
+            state.cast(),
             std::ptr::null_mut(),
             0,
         );
         let timer = g_timeout_add_seconds(3, refresh, state.cast());
         let preview_timer = g_timeout_add_seconds(1, preview_update, state.cast());
+        // Distrobox prefixes exported desktop IDs with the container name.
+        gtk_widget_realize(window);
+        let surface = gtk_native_get_surface(window);
+        if !surface.is_null()
+            && g_type_check_instance_is_a(surface, gdk_wayland_toplevel_get_type()) != 0
+        {
+            let id = std::env::var("CONTAINER_ID")
+                .ok()
+                .filter(|s| {
+                    !s.is_empty()
+                        && s.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                })
+                .map(|s| format!("{s}-reset-explode-linux"))
+                .unwrap_or_else(|| "reset-explode-linux".into());
+            gdk_wayland_toplevel_set_application_id(surface, cstring(&id).as_ptr());
+        }
         gtk_window_present(window);
         g_main_loop_run(main_loop);
         g_source_remove(timer);

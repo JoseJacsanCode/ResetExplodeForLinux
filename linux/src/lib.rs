@@ -151,20 +151,7 @@ fn steam_games() -> Vec<String> {
     games.into_iter().collect()
 }
 fn sensor_label(driver: &str, label: &str) -> String {
-    if driver == "acpitz" {
-        if let Some(number) = label
-            .strip_prefix("temp")
-            .and_then(|s| s.strip_suffix("_input"))
-            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-        {
-            return format!("Temperatura ACPI {number}");
-        }
-        return format!("Temperatura ACPI · {}", label.replace('_', " "));
-    }
     if driver == "coretemp" {
-        if let Some(number) = label.strip_prefix("Package id ") {
-            return format!("CPU · pacote {number}");
-        }
         if let Some(number) = label.strip_prefix("Core ") {
             return format!("CPU · núcleo {number}");
         }
@@ -296,8 +283,30 @@ fn utc_time(seconds: u64) -> String {
         rest % 60
     )
 }
-pub fn report_html(snapshot: &str, benchmark: Option<&str>, generated_seconds: u64) -> String {
-    let mut html = String::from("<!doctype html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Relatório Reset Explode</title><style>body{font:16px system-ui,sans-serif;background:#f6f6f6;color:#243247;max-width:960px;margin:40px auto;padding:0 20px;line-height:1.5}header{border-bottom:2px solid #315b9a;margin-bottom:24px}section{background:white;border:1px solid #d8dfe3;border-radius:12px;margin:16px 0;padding:18px 22px}h2{font-size:1.1rem;color:#315b9a;margin:0 0 12px}p{white-space:pre-wrap;margin:0}.note{color:#596679;font-size:.9rem}@media print{body{margin:0;background:white}section{break-inside:avoid}}</style></head><body><header><h1>RESET EXPLODE — Relatório</h1>");
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReportTheme {
+    Light,
+    Dark,
+}
+
+pub fn report_html(
+    snapshot: &str,
+    benchmark: Option<&str>,
+    generated_seconds: u64,
+    theme: ReportTheme,
+) -> String {
+    let (scheme, background, card, text, muted, border, accent) = match theme {
+        ReportTheme::Light => (
+            "light", "#f6f6f6", "#ffffff", "#403f53", "#626b7d", "#d8dfe3", "#365f9d",
+        ),
+        ReportTheme::Dark => (
+            "dark", "#011627", "#0b253a", "#d6deeb", "#a6accd", "#1d3b53", "#82aaff",
+        ),
+    };
+    let mut html = format!(
+        r#"<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Relatório Reset Explode</title><style>:root{{color-scheme:{scheme};--background:{background};--card:{card};--text:{text};--muted:{muted};--border:{border};--accent:{accent}}}html{{background:var(--background);color:var(--text);print-color-adjust:exact;-webkit-print-color-adjust:exact}}body{{font:16px system-ui,sans-serif;max-width:960px;margin:40px auto;padding:0 20px;line-height:1.5}}header{{border-bottom:2px solid var(--accent);margin-bottom:24px}}section{{background:var(--card);border:1px solid var(--border);border-radius:16px;margin:16px 0;padding:18px 22px}}h2{{font-size:1.1rem;color:var(--accent);margin:0 0 12px}}p{{white-space:pre-wrap;margin:0}}.note{{color:var(--muted);font-size:.9rem}}@media print{{body{{margin:0}}section{{break-inside:avoid}}}}</style></head><body><header><h1>RESET EXPLODE — Relatório</h1>"#
+    );
     html.push_str(&format!(
         "<p class=\"note\">Gerado em {} · leituras do momento da exportação</p></header>",
         utc_time(generated_seconds)
@@ -315,9 +324,115 @@ pub fn report_html(snapshot: &str, benchmark: Option<&str>, generated_seconds: u
             escape_html(&body)
         ));
     }
-    html.push_str(&format!("<section><h2>BENCHMARK DA SESSÃO</h2><p>{}</p><p class=\"note\">Pontuações locais não são comparáveis ao RESET BENCH original.</p></section>", escape_html(benchmark.unwrap_or("Nenhum resultado disponível nesta sessão."))));
+    html.push_str(&format!("<section><h2>RESULTADOS DA SESSÃO</h2><p>{}</p><p class=\"note\">Resultados disponíveis na sessão; verificações incompletas não determinam a saúde do hardware.</p></section>", escape_html(benchmark.unwrap_or("Nenhum resultado disponível nesta sessão."))));
     html.push_str("</body></html>\n");
     html
+}
+fn disk_brand(vendor: &str, model: &str) -> String {
+    let vendor = vendor.split_whitespace().collect::<Vec<_>>().join(" ");
+    let model = model.trim().to_ascii_uppercase();
+    let generic = vendor.is_empty()
+        || ["ATA", "SATA", "NVME", "USB", "GENERIC"]
+            .contains(&vendor.to_ascii_uppercase().as_str())
+        || vendor.starts_with("0x");
+    if !generic {
+        return vendor;
+    }
+    for (prefix, brand) in [
+        ("KINGSTON", "Kingston"),
+        ("SAMSUNG", "Samsung"),
+        ("SEAGATE", "Seagate"),
+        ("TOSHIBA", "Toshiba"),
+        ("CRUCIAL", "Crucial"),
+        ("INTEL", "Intel"),
+        ("SANDISK", "SanDisk"),
+        ("WDC", "Western Digital"),
+        ("WESTERN DIGITAL", "Western Digital"),
+        ("HGST", "HGST"),
+        ("MICRON", "Micron"),
+        ("KIOXIA", "Kioxia"),
+        ("ADATA", "ADATA"),
+    ] {
+        if model.starts_with(prefix) {
+            return brand.to_owned();
+        }
+    }
+    "Fabricante não informado".to_owned()
+}
+fn disk_rows(root: &Path) -> Vec<String> {
+    let mut rows = Vec::new();
+    if let Ok(entries) = fs::read_dir(root) {
+        let mut paths: Vec<_> = entries.flatten().map(|x| x.path()).collect();
+        paths.sort();
+        for path in paths {
+            let Some(name) = path.file_name().and_then(|x| x.to_str()) else {
+                continue;
+            };
+            if ["loop", "ram", "zram", "dm-", "md"]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+            {
+                continue;
+            }
+            let vendor = read(path.join("device/vendor"));
+            let model = read(path.join("device/model"))
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let brand = disk_brand(&vendor, &model);
+            // Linux reports this attribute in fixed 512-byte sectors, independent of device sector size.
+            let capacity = read(path.join("size"))
+                .parse::<u64>()
+                .ok()
+                .filter(|sectors| *sectors > 0)
+                .map(|sectors| format!("{:.1} GiB", sectors as f64 / 2_097_152.0))
+                .unwrap_or_else(|| "capacidade indisponível".to_owned());
+            rows.push(format!("/dev/{name}: {brand} · {capacity}"));
+        }
+    }
+    rows
+}
+fn sensor_readings(root: &Path) -> Vec<(String, String, f64)> {
+    let mut readings: Vec<(String, String, f64)> = Vec::new();
+    if let Ok(entries) = fs::read_dir(root) {
+        let mut paths: Vec<_> = entries.flatten().map(|x| x.path()).collect();
+        paths.sort();
+        for path in paths {
+            let name = read(path.join("name"));
+            if name == "acpitz" {
+                continue;
+            }
+            if let Ok(files) = fs::read_dir(&path) {
+                let mut files: Vec<_> = files.flatten().map(|x| x.path()).collect();
+                files.sort();
+                for file in files {
+                    let Some(n) = file.file_name().and_then(|x| x.to_str()) else {
+                        continue;
+                    };
+                    if !n.starts_with("temp") || !n.ends_with("_input") {
+                        continue;
+                    }
+                    if let Ok(raw) = read(&file).parse::<f64>() {
+                        let label = read(path.join(n.replace("_input", "_label")));
+                        if raw.is_finite()
+                            && !(name == "coretemp" && label.starts_with("Package id "))
+                        {
+                            readings.push((
+                                name.clone(),
+                                if label.is_empty() {
+                                    n.to_owned()
+                                } else {
+                                    label
+                                },
+                                raw / 1000.0,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    readings
 }
 pub fn snapshot() -> String {
     let os = read("/etc/os-release");
@@ -350,48 +465,13 @@ pub fn snapshot() -> String {
         _ => String::new(),
     };
     let memory = memory_text(&mem).unwrap_or_else(|| "indisponível".into());
-    let mut out = format!("RESET EXPLODE · PRÉVIA LINUX\n\nSISTEMA\nSistema: {name}\nKernel: {}\nCPU: {cpu}\nNúcleos: {cores}\nThreads: {threads}{restriction}\nMemória: {memory}\n\n", read("/proc/sys/kernel/osrelease"));
+    let mut out = format!("RESET EXPLODE · LINUX\n\nSISTEMA\nSistema: {name}\nKernel: {}\nCPU: {cpu}\nNúcleos: {cores}\nThreads: {threads}{restriction}\nMemória: {memory}\n\n", read("/proc/sys/kernel/osrelease"));
     out.push_str("SENSORES\n");
-    let mut readings: Vec<(String, String, f64)> = Vec::new();
-    if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
-        let mut paths: Vec<_> = entries.flatten().map(|x| x.path()).collect();
-        paths.sort();
-        for path in paths {
-            let name = read(path.join("name"));
-            if let Ok(files) = fs::read_dir(&path) {
-                let mut files: Vec<_> = files.flatten().map(|x| x.path()).collect();
-                files.sort();
-                for file in files {
-                    let Some(n) = file.file_name().and_then(|x| x.to_str()) else {
-                        continue;
-                    };
-                    if !n.starts_with("temp") || !n.ends_with("_input") {
-                        continue;
-                    }
-                    if let Ok(raw) = read(&file).parse::<f64>() {
-                        let label = read(path.join(n.replace("_input", "_label")));
-                        if raw.is_finite() {
-                            readings.push((
-                                name.clone(),
-                                if label.is_empty() {
-                                    n.to_owned()
-                                } else {
-                                    label
-                                },
-                                raw / 1000.0,
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let readings = sensor_readings(Path::new("/sys/class/hwmon"));
     match core_average(&readings) {
-        Some((mean, count)) => out.push_str(&format!(
-            "Média dos núcleos: {mean:.1} °C · {count} sensores\n"
-        )),
+        Some((mean, _)) => out.push_str(&format!("Temperatura média: {mean:.1} °C\n")),
         None => {
-            out.push_str("Média dos núcleos: indisponível (sensores por núcleo não detectados)\n")
+            out.push_str("Temperatura média: indisponível (sensores por núcleo não detectados)\n")
         }
     }
     if readings.is_empty() {
@@ -401,19 +481,12 @@ pub fn snapshot() -> String {
         out.push_str(&format!("{}: {temp:.1} °C\n", sensor_label(name, label)));
     }
     out.push_str("\nARMAZENAMENTO\n");
-    if let Ok(entries) = fs::read_dir("/sys/block") {
-        let mut paths: Vec<_> = entries.flatten().map(|x| x.path()).collect();
-        paths.sort();
-        for path in paths {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if name.starts_with("loop") || name.starts_with("ram") || name.starts_with("zram") {
-                continue;
-            }
-            let sectors = read(path.join("size")).parse::<u64>().unwrap_or(0);
-            out.push_str(&format!(
-                "/dev/{name}: {:.1} GiB\n",
-                sectors as f64 * 512.0 / 1073741824.0
-            ));
+    let disks = disk_rows(Path::new("/sys/block"));
+    if disks.is_empty() {
+        out.push_str("Nenhum disco detectado.\n");
+    } else {
+        for disk in disks {
+            out.push_str(&format!("{disk}\n"));
         }
     }
     out.push_str("\nENERGIA\n");
@@ -585,9 +658,64 @@ mod tests {
         );
     }
     #[test]
+    fn identifies_disk_brand_without_guessing_unknown_models() {
+        assert_eq!(disk_brand("ATA", "KINGSTON SA400S3"), "Kingston");
+        assert_eq!(disk_brand("ATA", "WDC WD10"), "Western Digital");
+        assert_eq!(disk_brand("Samsung", "XYZ"), "Samsung");
+        assert_eq!(
+            disk_brand("ATA", "DESCONHECIDO"),
+            "Fabricante não informado"
+        );
+        assert_eq!(disk_brand("0x1234", ""), "Fabricante não informado");
+    }
+    #[test]
+    fn disk_rows_show_path_brand_capacity_and_exclude_virtual_devices() {
+        let dir = std::env::temp_dir().join(format!(
+            "reset-disk-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(dir.join("sda/device")).unwrap();
+        fs::create_dir_all(dir.join("loop0/device")).unwrap();
+        fs::write(dir.join("sda/device/vendor"), "ATA").unwrap();
+        fs::write(dir.join("sda/device/model"), "KINGSTON SA400S3").unwrap();
+        fs::write(dir.join("sda/size"), "2097152").unwrap();
+        fs::create_dir_all(dir.join("sdb/device")).unwrap();
+        fs::write(dir.join("sdb/device/vendor"), "Unknown").unwrap();
+        let rows = disk_rows(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                "/dev/sda: Kingston · 1.0 GiB",
+                "/dev/sdb: Unknown · capacidade indisponível"
+            ]
+        );
+    }
+    #[test]
+    fn sensor_readings_exclude_acpi() {
+        let dir = std::env::temp_dir().join(format!(
+            "reset-sensors-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        for (device, name, value, label) in [
+            ("hwmon0", "acpitz", "27800", ""),
+            ("hwmon1", "coretemp", "48000", "Core 0"),
+        ] {
+            let path = dir.join(device);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("name"), name).unwrap();
+            fs::write(path.join("temp1_input"), value).unwrap();
+            fs::write(path.join("temp1_label"), label).unwrap();
+        }
+        let readings = sensor_readings(&dir);
+        fs::remove_dir_all(dir).unwrap();
+        assert_eq!(readings, vec![("coretemp".into(), "Core 0".into(), 48.0)]);
+        assert_eq!(core_average(&readings), Some((48.0, 1)));
+    }
+    #[test]
     fn readable_sensor_names() {
-        assert_eq!(sensor_label("acpitz", "temp1_input"), "Temperatura ACPI 1");
-        assert_eq!(sensor_label("coretemp", "Package id 0"), "CPU · pacote 0");
         assert_eq!(sensor_label("coretemp", "Core 3"), "CPU · núcleo 3");
     }
     #[test]
@@ -622,11 +750,33 @@ mod tests {
     }
     #[test]
     fn report_escapes_untrusted_data_and_formats_time() {
-        let report = report_html("SISTEMA\nNome: <script>&\"", Some("ok & pronto"), 0);
+        let report = report_html(
+            "SISTEMA\nNome: <script>&\"",
+            Some("ok & pronto"),
+            0,
+            ReportTheme::Light,
+        );
         assert!(report.contains("&lt;script&gt;&amp;&quot;"));
         assert!(!report.contains("<script>"));
         assert!(report.contains("1970-01-01 00:00:00 UTC"));
         assert!(report.contains("ok &amp; pronto"));
+    }
+    #[test]
+    fn report_uses_selected_theme() {
+        let light = report_html("SISTEMA\nCPU: exemplo", None, 0, ReportTheme::Light);
+        let dark = report_html("SISTEMA\nCPU: exemplo", None, 0, ReportTheme::Dark);
+        for (report, scheme, background, card, text, accent) in [
+            (&light, "light", "#f6f6f6", "#ffffff", "#403f53", "#365f9d"),
+            (&dark, "dark", "#011627", "#0b253a", "#d6deeb", "#82aaff"),
+        ] {
+            assert!(report.contains(&format!("color-scheme:{scheme}")));
+            assert!(report.contains(&format!("--background:{background}")));
+            assert!(report.contains(&format!("--card:{card}")));
+            assert!(report.contains(&format!("--text:{text}")));
+            assert!(report.contains(&format!("--accent:{accent}")));
+            assert!(report.contains("CPU: exemplo"));
+            assert!(report.contains("RESULTADOS DA SESSÃO"));
+        }
     }
     #[test]
     fn snapshot_has_sections() {

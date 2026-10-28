@@ -1,4 +1,4 @@
-//! Rust port of the CPU path tracer in BenchRenderer.cs (MIT license).
+//! Rust port of the CPU path tracer in BenchRenderer.cs.
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},

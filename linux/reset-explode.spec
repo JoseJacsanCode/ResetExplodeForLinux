@@ -1,14 +1,16 @@
-Name: reset-explode-gnome-preview
-Version: 0.13.0
+Name: reset-explode-gnome
+Version: 0.32.0
 Release: 1%{?dist}
-Summary: Previa Linux do Reset Explode
-License: MIT
+Summary: Reset Explode para Linux
+License: GPL-3.0-only
 BuildArch: x86_64
 AutoReqProv: no
+Obsoletes: reset-explode-gnome-preview < 0.27.0
+Provides: reset-explode-gnome-preview = %{version}-%{release}
 Requires: gtk4, libadwaita, glib2, glibc >= 2.39, hwdata
 
 %description
-Previa em Rust para consultar informacoes e sensores do sistema.
+Aplicativo em Rust para consultar informacoes e sensores do sistema.
 
 %install
 mkdir -p %{buildroot}/usr/bin %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/256x256/apps %{buildroot}/usr/share/doc/%{name}
