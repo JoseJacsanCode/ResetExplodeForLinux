@@ -2,13 +2,19 @@
 
 Versão para **Linux** forkeada do projeto do canal **Reset**.
 
-> Este repositório adapta o projeto original para rodar em sistemas Linux, mantendo a ideia e a proposta do canal. Assim como o original, esse também foi feito inteiramente com IA, eventuais erros serão encontrados. O objetivo deste projeto é criar uma versão para Linux do Reset Explode, contribuições ou forks para melhorar o projeto são bem-vindos
+> Este repositório adapta o projeto original para rodar em sistemas Linux, mantendo a ideia e a proposta do canal. Assim como o original, esse também foi feito inteiramente com IA, eventuais erros serão encontrados. O objetivo deste projeto é criar uma versão para Linux do Reset Explode, contribuições ou forks para melhorar o projeto são bem-vindos.
+
+---
+
+# 🚨 Observações
+
+O **Reset Explode For Linux** é um projeto 100% em vibecode para fins de experimento, não tem placa de vídeo em meu PC. Então, no que diz respeito a GPU não posso fazer os devidos testes. O opensource serve para contribuição de todos, por isso, peço que deêm continuidade ao projeto.
 
 ---
 
 ## 📌 Sobre o projeto
 
-O **ResetExplodeForLinux** é uma adaptação para Linux do projeto criado no canal Reset. O objetivo é permitir que quem usa distribuições Linux consiga executar o mesmo projeto sem depender do sistema original.
+O **Reset Explode For Linux** é uma adaptação para Linux do projeto criado no canal Reset. O objetivo é permitir que quem usa distribuições Linux consiga executar o mesmo projeto sem depender do sistema original.
 
 <!-- TODO: descreva em 1 ou 2 frases o que o projeto faz na prática (ex.: "Executa X ao rodar Y"). -->
 
@@ -40,20 +46,11 @@ cd ResetExplodeForLinux
 
 ## ▶️ Como usar
 
-Entre na pasta da versão Linux:
-
-```bash
-cd linux
-```
-
-<!-- TODO: informe o comando para executar. Exemplos:
-chmod +x nome-do-arquivo.sh
-./nome-do-arquivo.sh
--->
+Baixe o projeto, pode utilizar o [Visual Studio Code]() para programar ou utilizar alguma IA de sua preferência
 
 ## 🙏 Créditos
 
-- Projeto original: canal **Reset** — todos os direitos da ideia e do conteúdo original pertencem aos seus criadores.
+- Projeto original: [Reset Explode](https://github.com/GustavoReset/ResetExplode)
 - Adaptação para Linux: [JoseJacsanCode](https://github.com/JoseJacsanCode)
 
 ## 🤝 Contribuindo
